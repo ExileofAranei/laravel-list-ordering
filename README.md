@@ -1,59 +1,152 @@
-# Tight ordering of records within grouped lists using fractional indices: insertion and movement modify a single row, not the entire list.
+# Laravel List Ordering
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/exileofaranei/laravel-list-ordering.svg?style=flat-square)](https://packagist.org/packages/exileofaranei/laravel-list-ordering)
-[![GitHub Tests Action Status](https://github.com/spatie/package-laravel-list-ordering-laravel/actions/workflows/run-tests.yml/badge.svg)](https://github.com/exileofaranei/laravel-list-ordering/actions?query=workflow%3Arun-tests+branch%3Amain)
-[![GitHub Code Style Action Status](https://github.com/spatie/package-laravel-list-ordering-laravel/actions/workflows/fix-php-code-style-issues.yml/badge.svg)](https://github.com/exileofaranei/laravel-list-ordering/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
+[![GitHub Tests Action Status](https://github.com/exileofaranei/laravel-list-ordering/actions/workflows/run-tests.yml/badge.svg)](https://github.com/exileofaranei/laravel-list-ordering/actions?query=workflow%3Arun-tests+branch%3Amain)
 [![Total Downloads](https://img.shields.io/packagist/dt/exileofaranei/laravel-list-ordering.svg?style=flat-square)](https://packagist.org/packages/exileofaranei/laravel-list-ordering)
 
-This is where your description should go. Limit it to a paragraph or two. Consider adding a small example.
+Tight ordering of records within grouped lists using fractional indices: insertion and movement modify a single row, not the entire list.
 
-## Support us
+A list is defined by an arbitrary set of column values on the model — a composite key, a single column, or none at all (one global list). Order is stored as a byte-sortable string rank, not an integer position. Reordering within a list and moving between lists go through the same primitive: `placeInto()`, expressed entirely in terms of neighbor anchors, never integer positions.
 
-[<img src="https://github-ads.s3.eu-central-1.amazonaws.com/laravel-list-ordering.jpg?t=1" width="419px" />](https://spatie.be/github-ad-click/laravel-list-ordering)
-
-We invest a lot of resources into creating [best in class open source packages](https://spatie.be/open-source). You can support us by [buying one of our paid products](https://spatie.be/open-source/support-us).
-
-We highly appreciate you sending us a postcard from your hometown, mentioning which of our package(s) you are using. You'll find our address on [our contact page](https://spatie.be/about-us). We publish all received postcards on [our virtual postcard wall](https://spatie.be/open-source/postcards).
+The package knows nothing about the domain it's ordering. It has no concept of trees, hierarchies, or nested sets — it orders flat lists, however those lists are grouped.
 
 ## Installation
 
-You can install the package via composer:
+Install via Composer:
 
 ```bash
 composer require exileofaranei/laravel-list-ordering
 ```
 
-You can publish and run the migrations with:
+The service provider registers itself through Laravel package auto-discovery — no manual registration needed.
 
-```bash
-php artisan vendor:publish --tag="laravel-list-ordering-migrations"
-php artisan migrate
-```
-
-You can publish the config file with:
-
-```bash
-php artisan vendor:publish --tag="laravel-list-ordering-config"
-```
-
-This is the contents of the published config file:
+The package publishes no migration and no config file. You write your own migration for each model that needs ordering, using the `orderingRank()` Blueprint macro the package registers:
 
 ```php
-return [
-];
+Schema::create('tasks', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('board_id');
+    $table->string('column');
+    $table->orderingRank(); // 64-char rank column, byte-comparable collation per driver
+    $table->timestamps();
+
+    $table->unique(['board_id', 'column', 'rank']);
+});
 ```
 
-Optionally, you can publish the views using
-
-```bash
-php artisan vendor:publish --tag="laravel-list-ordering-views"
-```
+The unique index always covers the model's group columns plus the rank column — this is what a concurrent write collides against, and what `list-ordering:check-index` (below) checks your migration against.
 
 ## Usage
 
+### Declaring a model
+
+A model implements `Orderable` and uses the `HasOrdering` trait. The trait supplies everything except `orderingGroupColumns()` — the one method that says which columns define the model's list.
+
+**Composite key** (both columns not null):
+
 ```php
-$listOrdering = new ExileOfAranei\ListOrdering();
-echo $listOrdering->echoPhrase('Hello, ExileOfAranei!');
+use ExileOfAranei\ListOrdering\Concerns\HasOrdering;
+use ExileOfAranei\ListOrdering\Contracts\Orderable;
+
+class Task extends Model implements Orderable
+{
+    use HasOrdering;
+
+    public function orderingGroupColumns(): array
+    {
+        return ['board_id', 'column'];
+    }
+}
+```
+
+**Single column:**
+
+```php
+class GalleryImage extends Model implements Orderable
+{
+    use HasOrdering;
+
+    public function orderingGroupColumns(): array
+    {
+        return ['gallery_id'];
+    }
+}
+```
+
+**Empty list of columns** (one global list spanning the whole table):
+
+```php
+class LandingFeature extends Model implements Orderable
+{
+    use HasOrdering;
+
+    public function orderingGroupColumns(): array
+    {
+        return [];
+    }
+}
+```
+
+### Placing and moving records
+
+`placeInto()` is the one primitive. Reordering within a list and moving to a different list are the same call:
+
+```php
+use ExileOfAranei\ListOrdering\Support\GroupKey;
+
+// Insert a new task at the end of a board column.
+$task->placeInto(GroupKey::of(['board_id' => 42, 'column' => 'todo']), $lastInColumn, null);
+
+// Move it to a different column, between two existing tasks.
+$task->placeInto(GroupKey::of(['board_id' => 42, 'column' => 'done']), $doneFirst, $doneSecond);
+```
+
+Anchors define bounds, not required adjacency — if other rows already sit between the two anchors you pass, the rank is still generated strictly between them. Any anchor you omit is resolved automatically (the next/previous element, or the end of the list if neither is given).
+
+Thin wrappers read by intent, all delegating to `placeInto()`:
+
+```php
+$task->placeAtEnd(GroupKey::of(['board_id' => 42, 'column' => 'todo']));
+$task->placeAtStart(GroupKey::of(['board_id' => 42, 'column' => 'todo']));
+$task->placeAfter($anchorTask);  // target group is $anchorTask's group right now
+$task->placeBefore($anchorTask);
+```
+
+### Reading a list in order
+
+```php
+Task::ordered(GroupKey::of(['board_id' => 42, 'column' => 'todo']))->get();
+```
+
+Without a `GroupKey`, `ordered()` only sorts — it does not, and cannot, guarantee order across different groups in the result. Only omit it when the query is already narrowed to one group some other way (an already-scoped relationship, for example).
+
+### What the guard does — and doesn't — protect
+
+A `saving` guard rejects direct writes to the group or rank columns on an already-persisted model, so a typo like `$task->column = 'done'; $task->save();` fails loudly instead of silently corrupting the list. `create()`, factories, and seeders are unaffected — the guard only fires on updates to an existing row.
+
+The guard does **not** see `insert()`, `upsert()`, `withoutEvents()`, or any bulk write that bypasses Eloquent's `saving` event. It is a developer-experience convenience, not the integrity guarantee — that's the database-level composite unique index (group columns + rank), which holds regardless of how a write reaches the table.
+
+### Checking your index hasn't drifted
+
+Since migrations are immutable and a model's `orderingGroupColumns()` can change over time, nothing stops them from silently diverging. Two ways to catch it, both backed by the same check, neither run automatically:
+
+```bash
+php artisan list-ordering:check-index "App\Models\Task"
+php artisan list-ordering:check-index --all
+```
+
+```php
+use ExileOfAranei\ListOrdering\Testing\AssertsOrderingIndex;
+
+class TaskOrderingTest extends TestCase
+{
+    use AssertsOrderingIndex;
+
+    public function test_ordering_index_matches(): void
+    {
+        $this->assertOrderingIndexMatches(Task::class);
+    }
+}
 ```
 
 ## Testing
@@ -62,13 +155,11 @@ echo $listOrdering->echoPhrase('Hello, ExileOfAranei!');
 composer test
 ```
 
+Tests run against fixture models from an intentionally unrelated domain via `orchestra/testbench` — the package's own test suite never references a consuming application. CI runs the full suite against SQLite, MySQL, MariaDB, and PostgreSQL, since collation bugs are invisible on SQLite alone.
+
 ## Changelog
 
 Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed recently.
-
-## Contributing
-
-Please see [CONTRIBUTING](CONTRIBUTING.md) for details.
 
 ## Security Vulnerabilities
 
@@ -77,7 +168,6 @@ Please review [our security policy](../../security/policy) on how to report secu
 ## Credits
 
 - [ExileofAranei](https://github.com/exileofaranei)
-- [All Contributors](../../contributors)
 
 ## License
 
