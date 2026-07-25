@@ -102,16 +102,42 @@ jobs:
       - name: Execute tests
         run: vendor/bin/pest --ci
 
-  collation:
+  # Four standalone jobs, not a `db` matrix with one shared `services:`
+  # block: GitHub Actions services are declared per job, not per matrix
+  # value, so a matrix leg here would start ALL THREE database services on
+  # EVERY leg regardless of which one it actually tests — including the
+  # sqlite leg, which needs none of them. Four legs each booting three heavy
+  # database containers (12 total, in parallel) reliably failed at
+  # "Initialize containers" in practice; each job below starts only the one
+  # service (if any) it actually needs.
+  collation-sqlite:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
-    strategy:
-      fail-fast: false
-      matrix:
-        db: [sqlite, mysql, mariadb, pgsql]
+    name: Collation - sqlite
 
-    name: Collation - ${{ matrix.db }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, pdo_mysql, pdo_pgsql, bcmath, soap, intl, gd, exif, iconv, imagick, fileinfo
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Execute tests
+        run: vendor/bin/pest --ci
+
+  collation-mysql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    name: Collation - mysql
 
     services:
       mysql:
@@ -126,6 +152,38 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, pdo_mysql, pdo_pgsql, bcmath, soap, intl, gd, exif, iconv, imagick, fileinfo
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Execute tests
+        run: vendor/bin/pest --ci
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: testing
+          DB_USERNAME: root
+          DB_PASSWORD: ''
+
+  collation-mariadb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    name: Collation - mariadb
+
+    services:
       mariadb:
         image: mariadb:11
         env:
@@ -138,6 +196,38 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, pdo_mysql, pdo_pgsql, bcmath, soap, intl, gd, exif, iconv, imagick, fileinfo
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Execute tests
+        run: vendor/bin/pest --ci
+        env:
+          DB_CONNECTION: mariadb
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3307
+          DB_DATABASE: testing
+          DB_USERNAME: root
+          DB_PASSWORD: ''
+
+  collation-pgsql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    name: Collation - pgsql
+
+    services:
       pgsql:
         image: postgres:16
         env:
@@ -166,34 +256,7 @@ jobs:
       - name: Install dependencies
         run: composer update --prefer-stable --prefer-dist --no-interaction
 
-      - name: Execute tests (sqlite)
-        if: matrix.db == 'sqlite'
-        run: vendor/bin/pest --ci
-
-      - name: Execute tests (mysql)
-        if: matrix.db == 'mysql'
-        run: vendor/bin/pest --ci
-        env:
-          DB_CONNECTION: mysql
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_DATABASE: testing
-          DB_USERNAME: root
-          DB_PASSWORD: ''
-
-      - name: Execute tests (mariadb)
-        if: matrix.db == 'mariadb'
-        run: vendor/bin/pest --ci
-        env:
-          DB_CONNECTION: mariadb
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3307
-          DB_DATABASE: testing
-          DB_USERNAME: root
-          DB_PASSWORD: ''
-
-      - name: Execute tests (pgsql)
-        if: matrix.db == 'pgsql'
+      - name: Execute tests
         run: vendor/bin/pest --ci
         env:
           DB_CONNECTION: pgsql
