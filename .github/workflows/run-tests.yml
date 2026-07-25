@@ -54,11 +54,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         php: [8.5, 8.4, 8.3]
         laravel: [13.*, 12.*]
+        # prefer-lowest resolves pestphp/pest down to its composer.json floor
+        # ("pestphp/pest": "^4.2"). Do not lower that floor to ^4.0 without
+        # re-running `composer update --prefer-lowest` on both matrix legs
+        # (testbench 10.*/laravel 12.*, testbench 11.*/laravel 13.*) first:
+        # pest 4.0.0/4.1.0's PHPUnit ErrorHandler integration conflicts with
+        # orchestra/testbench-core, and this job only catches that under
+        # prefer-lowest, not prefer-stable.
         stability: [prefer-lowest, prefer-stable]
         include:
           - laravel: 13.*

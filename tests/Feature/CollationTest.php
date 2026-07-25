@@ -64,7 +64,10 @@ it('creates the rank column with the correct driver-specific collation', functio
     expect($column)->not->toBeNull();
 
     match ($driver) {
-        'mysql', 'mariadb' => expect($column['collation'])->toContain('bin'),
+        // mysql/mariadb get no explicit collation: charset('binary') turns the
+        // column into VARBINARY, which has no character set or collation of
+        // its own — assert on the actual type it produces instead.
+        'mysql', 'mariadb' => expect($column['type_name'])->toBe('varbinary'),
         'pgsql' => expect($column['collation'])->toBe('C'),
         default => throw new RuntimeException("Unhandled driver in this test: {$driver}"),
     };
