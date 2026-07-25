@@ -17,4 +17,9 @@ return new class extends Migration
             $table->unique(['list_id', 'rank']);
         });
     }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('shopping_list_entries');
+    }
 };

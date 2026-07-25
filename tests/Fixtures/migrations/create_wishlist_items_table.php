@@ -16,4 +16,9 @@ return new class extends Migration
             $table->unique(['rank']);
         });
     }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('wishlist_items');
+    }
 };

@@ -18,4 +18,9 @@ return new class extends Migration
             $table->unique(['pantry_id', 'shelf', 'rank']);
         });
     }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('spice_jars');
+    }
 };
