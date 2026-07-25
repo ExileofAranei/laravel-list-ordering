@@ -7,9 +7,11 @@ use ExileOfAranei\ListOrdering\Contracts\RankGenerator;
 use ExileOfAranei\ListOrdering\Events\Positioned;
 use ExileOfAranei\ListOrdering\Exceptions\InvalidAnchorException;
 use ExileOfAranei\ListOrdering\Exceptions\ListOrderingException;
+use ExileOfAranei\ListOrdering\Exceptions\RankConflictException;
 use ExileOfAranei\ListOrdering\Support\GroupKey;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
 
 /**
  * @internal Not part of the package's public contract. Reached only through
@@ -18,9 +20,51 @@ use Illuminate\Database\Eloquent\Model;
  */
 final class Positioner
 {
-    public function __construct(private readonly RankGenerator $ranks) {}
+    public function __construct(
+        private readonly RankGenerator $ranks,
+        private readonly int $maxRetries = 3,
+    ) {}
 
     public function place(
+        Model&Orderable $model,
+        GroupKey $group,
+        (Model&Orderable)|null $after,
+        (Model&Orderable)|null $before,
+    ): void {
+        $retries = 0;
+
+        while (true) {
+            try {
+                $this->attempt($model, $group, $after, $before);
+
+                return;
+            } catch (UniqueConstraintViolationException $e) {
+                if ($retries >= $this->maxRetries) {
+                    throw new RankConflictException(sprintf(
+                        'Failed to place the record after %d retries due to repeated rank conflicts.',
+                        $this->maxRetries,
+                    ), previous: $e);
+                }
+
+                $retries++;
+
+                // Loop again without reusing anything computed above: the next
+                // attempt calls resolveAnchors() fresh, so any auto-resolved
+                // (missing) anchor is re-queried from the database rather than
+                // reusing the bounds that just produced this conflict — reusing
+                // them would deterministically regenerate the same rank and
+                // reproduce the same conflict. Explicitly given anchors are not
+                // re-queried (there is nothing "missing" to resolve for them) —
+                // if BOTH $after and $before were given explicitly, every retry
+                // recomputes the identical rank and hits the identical conflict,
+                // so retrying here cannot help; it will exhaust maxRetries and
+                // throw. That call shape has no missing anchor for this loop to
+                // usefully re-resolve.
+            }
+        }
+    }
+
+    private function attempt(
         Model&Orderable $model,
         GroupKey $group,
         (Model&Orderable)|null $after,
