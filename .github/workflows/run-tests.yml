@@ -21,6 +21,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  independence-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    name: Independence gates
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: No references to consumer application code
+        run: '! grep -rn ''App\\'' src/ tests/'
+
+      - name: No hard-ban consumer vocabulary (tier 1)
+        run: '! grep -rniE ''block|canvas|slot|tgs|accordion|placement|categor|article|news|nested set'' src/ tests/'
+
+      - name: No unfiltered hierarchy vocabulary (tier 2)
+        run: |
+          # Tier 2 words are ambiguous: "parent"/"child" also name a plain PHP language
+          # construct (parent::method()), and "tree"/"node"/"hierarch"/"ancestor"/"descendant"
+          # also appear in legitimate LSP/covariance discussion. Exceptions are named here,
+          # not silently dropped from the word list.
+          MATCHES=$(grep -rniE 'parent|child|tree|node|hierarch|ancestor|descendant' src/ tests/ || true)
+          FILTERED=$(printf '%s\n' "$MATCHES" | grep -viE 'parent::|LSP|Liskov|covarian' || true)
+          if [ -n "$FILTERED" ]; then
+            echo "$FILTERED"
+            exit 1
+          fi
+
   test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
