@@ -4,7 +4,12 @@
     "keywords": [
         "exileofaranei",
         "laravel",
-        "laravel-list-ordering"
+        "fractional-indexing",
+        "lexorank",
+        "ordering",
+        "sortable",
+        "reorder",
+        "eloquent"
     ],
     "homepage": "https://github.com/exileofaranei/laravel-list-ordering",
     "license": "MIT",
