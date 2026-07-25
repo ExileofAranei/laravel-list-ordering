@@ -72,6 +72,49 @@ trait HasOrdering
         });
     }
 
+    /**
+     * Thin delegate to placeInto() — no positioning logic of its own.
+     */
+    public function placeAtEnd(GroupKey $group): void
+    {
+        $this->placeInto($group, null, null);
+    }
+
+    /**
+     * Delegates to placeInto() — the only work of its own is resolving the
+     * current first element of $group, to pass as the boundary anchor.
+     */
+    public function placeAtStart(GroupKey $group): void
+    {
+        $query = $this->newQuery()->ordered($group);
+
+        if ($this->exists) {
+            $query->where($this->getKeyName(), '!=', $this->getKey());
+        }
+
+        $this->placeInto($group, null, $this->narrowModel($query->first()));
+    }
+
+    /**
+     * Thin delegate to placeInto() — no positioning logic of its own. The
+     * target group is $anchor's group *at call time*, not whatever group the
+     * caller might otherwise assume — so this still lands correctly even if
+     * $anchor moved to a different group since it was last referenced.
+     */
+    public function placeAfter(Model&Orderable $anchor): void
+    {
+        $this->placeInto($anchor->currentGroupKey(), $anchor, null);
+    }
+
+    /**
+     * Thin delegate to placeInto() — no positioning logic of its own. See
+     * placeAfter() for why the group comes from $anchor, not the caller.
+     */
+    public function placeBefore(Model&Orderable $anchor): void
+    {
+        $this->placeInto($anchor->currentGroupKey(), null, $anchor);
+    }
+
     private function withOrderingGuardBypassed(\Closure $callback): mixed
     {
         $this->orderingGuardBypassed = true;
@@ -122,17 +165,28 @@ trait HasOrdering
 
     private function narrowAnchor(?Orderable $anchor): (Model&Orderable)|null
     {
-        if ($anchor === null) {
+        return $this->narrowModel($anchor);
+    }
+
+    /**
+     * Both directions of the same gap: an ?Orderable might not be a Model,
+     * and an ?Model (e.g. a raw query result) might not be Orderable. Either
+     * way, the package's own models always satisfy both — this only makes
+     * that fact visible to the type system, in one place.
+     */
+    private function narrowModel(?object $candidate): (Model&Orderable)|null
+    {
+        if ($candidate === null) {
             return null;
         }
 
-        if (! $anchor instanceof Model) {
+        if (! $candidate instanceof Model || ! $candidate instanceof Orderable) {
             throw new InvalidAnchorException(
-                'An anchor passed to placeInto() must be an Eloquent model instance.'
+                'Expected a Model implementing Orderable.'
             );
         }
 
-        return $anchor;
+        return $candidate;
     }
 
     /**
