@@ -2,6 +2,7 @@
 
 namespace ExileOfAranei\ListOrdering;
 
+use ExileOfAranei\ListOrdering\Commands\CheckOrderingIndexCommand;
 use ExileOfAranei\ListOrdering\Contracts\RankGenerator;
 use ExileOfAranei\ListOrdering\Generators\FractionalRankGenerator;
 use Illuminate\Database\Schema\Blueprint;
@@ -13,7 +14,9 @@ class ListOrderingServiceProvider extends PackageServiceProvider
 {
     public function configurePackage(Package $package): void
     {
-        $package->name('laravel-list-ordering');
+        $package
+            ->name('laravel-list-ordering')
+            ->hasCommand(CheckOrderingIndexCommand::class);
     }
 
     public function packageRegistered(): void
