@@ -46,16 +46,7 @@ it('clears the guard bypass flag after placeInto() even when the underlying writ
     // Force the guarded save() inside placeInto() to fail deterministically:
     // bind a generator that always returns an already-taken rank, so the
     // unique index rejects the write (no retry exists yet; that's ticket 06).
-    app()->bind(
-        RankGenerator::class,
-        fn () => new class implements RankGenerator
-        {
-            public function between(?string $lower, ?string $upper): string
-            {
-                return 'B';
-            }
-        }
-    );
+    app()->bind(RankGenerator::class, fn () => fakeRankGenerator(fn () => 'B'));
 
     ShoppingListEntry::create(['list_id' => 1, 'rank' => 'B']);
     $entry = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);

@@ -35,7 +35,7 @@ final class Positioner
 
         while (true) {
             try {
-                $this->attempt($model, $group, $after, $before);
+                $this->attempt($model, $group, $after, $before, isRetry: $retries > 0);
 
                 return;
             } catch (UniqueConstraintViolationException $e) {
@@ -53,13 +53,13 @@ final class Positioner
                 // (missing) anchor is re-queried from the database rather than
                 // reusing the bounds that just produced this conflict — reusing
                 // them would deterministically regenerate the same rank and
-                // reproduce the same conflict. Explicitly given anchors are not
-                // re-queried (there is nothing "missing" to resolve for them) —
-                // if BOTH $after and $before were given explicitly, every retry
-                // recomputes the identical rank and hits the identical conflict,
-                // so retrying here cannot help; it will exhaust maxRetries and
-                // throw. That call shape has no missing anchor for this loop to
-                // usefully re-resolve.
+                // reproduce the same conflict. When BOTH $after and $before were
+                // given explicitly, resolveAnchors() (told isRetry: true) drops
+                // the stale $before and re-resolves it the same way the
+                // after-only case does — any row that could have caused this
+                // conflict necessarily sits between $after and $before, so
+                // re-querying the immediate next row after $after always finds
+                // it and narrows the interval.
             }
         }
     }
@@ -69,8 +69,9 @@ final class Positioner
         GroupKey $group,
         (Model&Orderable)|null $after,
         (Model&Orderable)|null $before,
+        bool $isRetry,
     ): void {
-        [$after, $before] = $this->resolveAnchors($model, $group, $after, $before);
+        [$after, $before] = $this->resolveAnchors($model, $group, $after, $before, $isRetry);
 
         $rank = $this->ranks->between(
             $after?->getAttribute($after->orderingRankColumn()),
@@ -97,10 +98,15 @@ final class Positioner
         GroupKey $group,
         (Model&Orderable)|null $after,
         (Model&Orderable)|null $before,
+        bool $isRetry,
     ): array {
         if ($after !== null && $before !== null) {
             $this->assertBelongsToGroup($after, $group);
             $this->assertBelongsToGroup($before, $group);
+
+            if ($isRetry) {
+                return [$after, $this->findNext($model, $group, $after)];
+            }
 
             return [$after, $before];
         }

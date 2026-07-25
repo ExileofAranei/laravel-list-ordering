@@ -9,22 +9,19 @@ use ExileOfAranei\ListOrdering\Tests\Fixtures\Models\ShoppingListEntry;
 it('recovers from a forced conflict on the first attempt via retry', function () {
     ShoppingListEntry::create(['list_id' => 1, 'rank' => 'B']);
 
-    $callCount = new stdClass;
-    $callCount->n = 0;
+    $calls = 0;
 
-    app()->bind(RankGenerator::class, function () use ($callCount) {
-        return new class($callCount) implements RankGenerator
-        {
-            public function __construct(private stdClass $count) {}
+    // A regular function() at this outer level, not fn(): arrow functions
+    // capture enclosing variables by value, which would sever the closure
+    // below from this $calls — a byref use() on it would bind to a copy
+    // local to the arrow function's own vanished invocation, not to this one.
+    app()->bind(RankGenerator::class, function () use (&$calls) {
+        return fakeRankGenerator(function () use (&$calls) {
+            $calls++;
 
-            public function between(?string $lower, ?string $upper): string
-            {
-                $this->count->n++;
-
-                // Collide on the first attempt only.
-                return $this->count->n === 1 ? 'B' : 'Z';
-            }
-        };
+            // Collide on the first attempt only.
+            return $calls === 1 ? 'B' : 'Z';
+        });
     });
 
     $entry = new ShoppingListEntry(['list_id' => 1]);
@@ -32,44 +29,70 @@ it('recovers from a forced conflict on the first attempt via retry', function ()
 
     expect($entry->exists)->toBeTrue();
     expect($entry->rank)->toBe('Z');
-    expect($callCount->n)->toBe(2);
+    expect($calls)->toBe(2);
 });
 
 it('re-resolves a missing anchor fresh on each retry, not just the rank between stale bounds', function () {
     $a = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
 
-    $log = new stdClass;
-    $log->calls = [];
+    $log = [];
 
-    app()->bind(RankGenerator::class, function () use ($log) {
-        return new class($log) implements RankGenerator
-        {
-            public function __construct(private stdClass $log) {}
+    app()->bind(RankGenerator::class, function () use (&$log) {
+        return fakeRankGenerator(function (?string $lower, ?string $upper, int $call) use (&$log) {
+            $log[] = [$lower, $upper];
 
-            public function between(?string $lower, ?string $upper): string
-            {
-                $this->log->calls[] = [$lower, $upper];
+            if ($call === 1) {
+                // Simulate a concurrent writer landing right after $a,
+                // between the first attempt's read and its write, then
+                // force this attempt's own write to collide with it.
+                ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
 
-                if (count($this->log->calls) === 1) {
-                    // Simulate a concurrent writer landing right after $a,
-                    // between the first attempt's read and its write, then
-                    // force this attempt's own write to collide with it.
-                    ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
-
-                    return 'M';
-                }
-
-                return 'C';
+                return 'M';
             }
-        };
+
+            return 'C';
+        });
     });
 
     $mover = new ShoppingListEntry(['list_id' => 1]);
     $mover->placeAfter($a);
 
-    expect($log->calls)->toBe([
+    expect($log)->toBe([
         ['A', null], // first attempt: nothing after $a yet
         ['A', 'M'],  // retry: re-queried and found the concurrently inserted row
+    ]);
+    expect($mover->rank)->toBe('C');
+});
+
+it('re-resolves the upper bound of two explicit anchors fresh on retry, not just the rank between stale bounds', function () {
+    $a = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $z = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'Z']);
+
+    $log = [];
+
+    app()->bind(RankGenerator::class, function () use (&$log) {
+        return fakeRankGenerator(function (?string $lower, ?string $upper, int $call) use (&$log) {
+            $log[] = [$lower, $upper];
+
+            if ($call === 1) {
+                // Simulate a concurrent writer landing between $a and $z,
+                // at the exact rank this attempt is about to write, then
+                // force this attempt's own write to collide with it.
+                ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
+
+                return 'M';
+            }
+
+            return 'C';
+        });
+    });
+
+    $mover = new ShoppingListEntry(['list_id' => 1]);
+    $mover->placeInto(GroupKey::of(['list_id' => 1]), $a, $z);
+
+    expect($log)->toBe([
+        ['A', 'Z'], // first attempt: both anchors used exactly as given
+        ['A', 'M'], // retry: upper bound re-resolved to the concurrently inserted row
     ]);
     expect($mover->rank)->toBe('C');
 });
@@ -77,13 +100,7 @@ it('re-resolves a missing anchor fresh on each retry, not just the rank between 
 it('throws RankConflictException once retries are exhausted', function () {
     ShoppingListEntry::create(['list_id' => 1, 'rank' => 'B']);
 
-    app()->bind(RankGenerator::class, fn () => new class implements RankGenerator
-    {
-        public function between(?string $lower, ?string $upper): string
-        {
-            return 'B'; // always collides
-        }
-    });
+    app()->bind(RankGenerator::class, fn () => fakeRankGenerator(fn () => 'B')); // always collides
 
     $entry = new ShoppingListEntry(['list_id' => 1]);
     $entry->placeInto(GroupKey::of(['list_id' => 1]), null, null);
@@ -92,21 +109,14 @@ it('throws RankConflictException once retries are exhausted', function () {
 it('honors a maxRetries binding smaller than the default', function () {
     ShoppingListEntry::create(['list_id' => 1, 'rank' => 'B']);
 
-    $callCount = new stdClass;
-    $callCount->n = 0;
+    $calls = 0;
 
-    app()->bind(RankGenerator::class, function () use ($callCount) {
-        return new class($callCount) implements RankGenerator
-        {
-            public function __construct(private stdClass $count) {}
+    app()->bind(RankGenerator::class, function () use (&$calls) {
+        return fakeRankGenerator(function () use (&$calls) {
+            $calls++;
 
-            public function between(?string $lower, ?string $upper): string
-            {
-                $this->count->n++;
-
-                return 'B'; // always collides
-            }
-        };
+            return 'B'; // always collides
+        });
     });
 
     app()->bind(Positioner::class, fn ($app) => new Positioner($app->make(RankGenerator::class), maxRetries: 1));
@@ -120,5 +130,5 @@ it('honors a maxRetries binding smaller than the default', function () {
     }
 
     // 1 initial attempt + 1 retry = 2 calls, not the default's 1 + 3 = 4.
-    expect($callCount->n)->toBe(2);
+    expect($calls)->toBe(2);
 });
