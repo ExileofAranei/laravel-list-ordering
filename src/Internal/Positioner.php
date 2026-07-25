@@ -191,6 +191,13 @@ final class Positioner
             $query->where($model->getKeyName(), '!=', $model->getKey());
         }
 
+        // A row with a NULL rank (e.g. mid-migration from an integer position
+        // column, not yet backfilled) must never be picked as an anchor: on
+        // Postgres, ORDER BY rank DESC defaults to NULLS FIRST, so findLast()
+        // would otherwise return it as the "last" row instead of skipping it,
+        // making between() treat a non-empty group as empty.
+        $query->whereNotNull($model->orderingRankColumn());
+
         return $query;
     }
 }
