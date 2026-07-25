@@ -175,6 +175,21 @@ it('changes the group columns and the rank in a single write', function () {
     expect($writes)->toHaveCount(1);
 });
 
+it('writes a brand-new, non-persistent model with a single INSERT', function () {
+    $entry = new ShoppingListEntry(['list_id' => 1]);
+
+    DB::enableQueryLog();
+    $entry->placeInto(GroupKey::of(['list_id' => 1]), null, null);
+    $writes = collect(DB::getQueryLog())->filter(
+        fn (array $entry) => str_starts_with(strtolower($entry['query']), 'update')
+            || str_starts_with(strtolower($entry['query']), 'insert')
+    );
+    DB::disableQueryLog();
+
+    expect($writes)->toHaveCount(1);
+    expect($entry->exists)->toBeTrue();
+});
+
 // --- Untouched-row invariant --------------------------------------------------
 
 it('leaves the rank of every untouched row byte-identical after a placeInto() call', function () {

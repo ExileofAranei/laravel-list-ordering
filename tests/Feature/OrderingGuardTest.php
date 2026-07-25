@@ -42,6 +42,20 @@ it('does not throw for an unrelated column change on a persisted model', functio
     expect($entry->wasChanged('updated_at'))->toBeTrue();
 });
 
+it('updates updated_at when a model moves via placeInto()', function () {
+    $entry = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+
+    // A forced time gap, not just "some time passes": updated_at is stored
+    // at second precision, so a move landing in the same second as create()
+    // would leave the stored value unchanged even though save() ran again —
+    // that would make this test pass without proving anything.
+    Carbon\Carbon::setTestNow(now()->addMinute());
+    $entry->placeInto(GroupKey::of(['list_id' => 2]), null, null);
+    Carbon\Carbon::setTestNow();
+
+    expect($entry->wasChanged('updated_at'))->toBeTrue();
+});
+
 it('clears the guard bypass flag after placeInto() even when the underlying write fails', function () {
     // Force the guarded save() inside placeInto() to fail deterministically:
     // bind a generator that always returns an already-taken rank, so the

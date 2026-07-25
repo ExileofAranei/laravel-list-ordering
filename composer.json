@@ -42,8 +42,7 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "ExileOfAranei\\ListOrdering\\Tests\\": "tests/",
-            "Workbench\\App\\": "workbench/app/"
+            "ExileOfAranei\\ListOrdering\\Tests\\": "tests/"
         }
     },
     "scripts": {
@@ -52,6 +51,7 @@
         "analyse": "vendor/bin/phpstan analyse",
         "test": "vendor/bin/pest",
         "test-coverage": "vendor/bin/pest --coverage",
+        "lint": "vendor/bin/pint --test",
         "format": "vendor/bin/pint"
     },
     "config": {
