@@ -5,6 +5,10 @@ parameters:
     level: 5
     paths:
         - src
+        # database/factories/.gitkeep keeps this directory present on a
+        # fresh checkout (git does not track empty directories) — without
+        # it, this path does not exist and PHPStan fails before analysing
+        # a single file.
         - database
     tmpDir: build/phpstan
     ignoreErrors:
