@@ -7,3 +7,14 @@ parameters:
         - src
         - database
     tmpDir: build/phpstan
+    ignoreErrors:
+        -
+            # Concern traits are consumed by models in a package's *consuming*
+            # application, which this repo's own analysis never sees — only by
+            # the fixture models under tests/, which aren't in `paths` above
+            # (Pest's fluent test API isn't statically analysable without
+            # dedicated tooling this package doesn't install). "Unused" here
+            # is a structural false positive for any public-API trait, not a
+            # real dead-code signal.
+            identifier: trait.unused
+            path: src/Concerns/*.php
