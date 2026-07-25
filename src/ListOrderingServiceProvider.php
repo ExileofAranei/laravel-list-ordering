@@ -2,6 +2,8 @@
 
 namespace ExileOfAranei\ListOrdering;
 
+use ExileOfAranei\ListOrdering\Contracts\RankGenerator;
+use ExileOfAranei\ListOrdering\Generators\FractionalRankGenerator;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Spatie\LaravelPackageTools\Package;
@@ -12,6 +14,11 @@ class ListOrderingServiceProvider extends PackageServiceProvider
     public function configurePackage(Package $package): void
     {
         $package->name('laravel-list-ordering');
+    }
+
+    public function packageRegistered(): void
+    {
+        $this->app->bind(RankGenerator::class, FractionalRankGenerator::class);
     }
 
     public function bootingPackage(): void

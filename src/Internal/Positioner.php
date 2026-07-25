@@ -1,0 +1,146 @@
+<?php
+
+namespace ExileOfAranei\ListOrdering\Internal;
+
+use ExileOfAranei\ListOrdering\Contracts\Orderable;
+use ExileOfAranei\ListOrdering\Contracts\RankGenerator;
+use ExileOfAranei\ListOrdering\Events\Positioned;
+use ExileOfAranei\ListOrdering\Exceptions\InvalidAnchorException;
+use ExileOfAranei\ListOrdering\Exceptions\ListOrderingException;
+use ExileOfAranei\ListOrdering\Support\GroupKey;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+
+/**
+ * @internal Not part of the package's public contract. Reached only through
+ * Concerns\HasOrdering::placeInto(), which performs the ?Orderable ->
+ * Model&Orderable narrowing before calling here.
+ */
+final class Positioner
+{
+    public function __construct(private readonly RankGenerator $ranks) {}
+
+    public function place(
+        Model&Orderable $model,
+        GroupKey $group,
+        (Model&Orderable)|null $after,
+        (Model&Orderable)|null $before,
+    ): void {
+        [$after, $before] = $this->resolveAnchors($model, $group, $after, $before);
+
+        $rank = $this->ranks->between(
+            $after?->getAttribute($after->orderingRankColumn()),
+            $before?->getAttribute($before->orderingRankColumn()),
+        );
+
+        $from = $model->exists ? $model->currentGroupKey() : null;
+
+        foreach ($group->toArray() as $column => $value) {
+            $model->setAttribute($column, $value);
+        }
+
+        $model->setAttribute($model->orderingRankColumn(), $rank);
+        $model->save();
+
+        event(new Positioned($model, $from, $group));
+    }
+
+    /**
+     * @return array{0: (Model&Orderable)|null, 1: (Model&Orderable)|null}
+     */
+    private function resolveAnchors(
+        Model&Orderable $model,
+        GroupKey $group,
+        (Model&Orderable)|null $after,
+        (Model&Orderable)|null $before,
+    ): array {
+        if ($after !== null && $before !== null) {
+            $this->assertBelongsToGroup($after, $group);
+            $this->assertBelongsToGroup($before, $group);
+
+            return [$after, $before];
+        }
+
+        if ($after !== null) {
+            $this->assertBelongsToGroup($after, $group);
+
+            return [$after, $this->findNext($model, $group, $after)];
+        }
+
+        if ($before !== null) {
+            $this->assertBelongsToGroup($before, $group);
+
+            return [$this->findPrevious($model, $group, $before), $before];
+        }
+
+        return [$this->findLast($model, $group), null];
+    }
+
+    private function assertBelongsToGroup(Model&Orderable $anchor, GroupKey $group): void
+    {
+        if (! $anchor->currentGroupKey()->equals($group)) {
+            throw new InvalidAnchorException(
+                'The anchor passed to placeInto() does not belong to the target group.'
+            );
+        }
+    }
+
+    private function findNext(Model&Orderable $model, GroupKey $group, Model&Orderable $after): (Model&Orderable)|null
+    {
+        $query = $this->scopedToGroup($model, $group);
+
+        $query->where($model->orderingRankColumn(), '>', $after->getAttribute($after->orderingRankColumn()));
+        $query->orderBy($model->orderingRankColumn());
+
+        return $this->narrowResult($query->first());
+    }
+
+    private function findPrevious(Model&Orderable $model, GroupKey $group, Model&Orderable $before): (Model&Orderable)|null
+    {
+        $query = $this->scopedToGroup($model, $group);
+
+        $query->where($model->orderingRankColumn(), '<', $before->getAttribute($before->orderingRankColumn()));
+        $query->orderByDesc($model->orderingRankColumn());
+
+        return $this->narrowResult($query->first());
+    }
+
+    private function findLast(Model&Orderable $model, GroupKey $group): (Model&Orderable)|null
+    {
+        $query = $this->scopedToGroup($model, $group);
+
+        $query->orderByDesc($model->orderingRankColumn());
+
+        return $this->narrowResult($query->first());
+    }
+
+    /**
+     * $query is always built from $model->newQuery(), so any row it returns
+     * is necessarily an instance of $model's own (Orderable-implementing)
+     * class — this only makes that fact visible to the type system.
+     */
+    private function narrowResult(?Model $result): (Model&Orderable)|null
+    {
+        if ($result === null) {
+            return null;
+        }
+
+        if (! $result instanceof Orderable) {
+            throw new ListOrderingException('Expected the query to return an Orderable model.');
+        }
+
+        return $result;
+    }
+
+    private function scopedToGroup(Model&Orderable $model, GroupKey $group): Builder
+    {
+        $query = $model->newQuery();
+        $group->applyTo($query);
+
+        if ($model->exists) {
+            $query->where($model->getKeyName(), '!=', $model->getKey());
+        }
+
+        return $query;
+    }
+}

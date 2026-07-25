@@ -6,17 +6,20 @@ use ExileOfAranei\ListOrdering\Concerns\HasOrdering;
 use ExileOfAranei\ListOrdering\Contracts\Orderable;
 use Illuminate\Database\Eloquent\Model;
 
-class SpiceJar extends Model implements Orderable
+/**
+ * A single global list — no grouping columns at all.
+ */
+class WishlistItem extends Model implements Orderable
 {
     use HasOrdering;
 
-    protected $table = 'spice_jars';
+    protected $table = 'wishlist_items';
 
     protected $guarded = [];
 
     /** @return list<string> */
     public function orderingGroupColumns(): array
     {
-        return ['pantry_id', 'shelf'];
+        return [];
     }
 }
