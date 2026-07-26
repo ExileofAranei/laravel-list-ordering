@@ -50,8 +50,8 @@ it('scenario 1: inserts into the end of an empty list', function () {
 });
 
 it('scenario 2: inserts between two neighbors of the same list', function () {
-    $left = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
-    $right = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'Z']);
+    $left = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
+    $right = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'Z');
 
     $middle = new ShoppingListEntry(['list_id' => 1]);
     $middle->placeInto(GroupKey::of(['list_id' => 1]), $left, $right);
@@ -60,9 +60,9 @@ it('scenario 2: inserts between two neighbors of the same list', function () {
 });
 
 it('scenario 3: reorders within a list — was last, becomes second', function () {
-    $a = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
-    $b = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
-    $c = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'Z']);
+    $a = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
+    $b = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'M');
+    $c = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'Z');
 
     $c->placeInto(GroupKey::of(['list_id' => 1]), $a, $b);
 
@@ -72,11 +72,11 @@ it('scenario 3: reorders within a list — was last, becomes second', function (
 });
 
 it('scenario 4: moves to another list, between two of its elements', function () {
-    ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
-    $target = ShoppingListEntry::create(['list_id' => 2, 'rank' => 'A']);
-    $targetEnd = ShoppingListEntry::create(['list_id' => 2, 'rank' => 'Z']);
+    seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
+    $target = seedAtRank(ShoppingListEntry::class, ['list_id' => 2], 'A');
+    $targetEnd = seedAtRank(ShoppingListEntry::class, ['list_id' => 2], 'Z');
 
-    $mover = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'B']);
+    $mover = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'B');
     $mover->placeInto(GroupKey::of(['list_id' => 2]), $target, $targetEnd);
 
     $mover->refresh();
@@ -86,7 +86,7 @@ it('scenario 4: moves to another list, between two of its elements', function ()
 });
 
 it('scenario 5: moves to another, empty list', function () {
-    $mover = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $mover = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     $mover->placeInto(GroupKey::of(['list_id' => 99]), null, null);
     $mover->refresh();
@@ -96,7 +96,7 @@ it('scenario 5: moves to another, empty list', function () {
 });
 
 it('scenario 6: "after X" lands in the group X currently belongs to, even if X moved since', function () {
-    $x = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $x = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     // X itself moves to list 2 first.
     $x->placeInto(GroupKey::of(['list_id' => 2]), null, null);
@@ -110,7 +110,7 @@ it('scenario 6: "after X" lands in the group X currently belongs to, even if X m
 });
 
 it('scenario 7: "after X" where X no longer exists, but the next neighbor Y is known', function () {
-    $y = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
+    $y = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'M');
 
     $restored = new ShoppingListEntry(['list_id' => 1]);
     $restored->placeInto(GroupKey::of(['list_id' => 1]), null, $y);
@@ -119,8 +119,8 @@ it('scenario 7: "after X" where X no longer exists, but the next neighbor Y is k
 });
 
 it('scenario 8: no anchor is known at all, on a non-empty list', function () {
-    ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
-    ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
+    seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
+    seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'M');
 
     $restored = new ShoppingListEntry(['list_id' => 1]);
     $restored->placeInto(GroupKey::of(['list_id' => 1]), null, null);
@@ -131,12 +131,12 @@ it('scenario 8: no anchor is known at all, on a non-empty list', function () {
 // --- Anchors are bounds, not adjacency requirements -------------------------
 
 it('generates a rank strictly between two explicit anchors even when other rows already sit between them', function () {
-    $left = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $left = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
     // Deliberately not 'M' (the deterministic midpoint of 'A'..'Z') — that
     // would collide with the freshly generated rank below, which is a
     // concurrency-retry concern (ticket 06), not what this test is about.
-    ShoppingListEntry::create(['list_id' => 1, 'rank' => 'C']); // sits between $left and $right
-    $right = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'Z']);
+    seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'C'); // sits between $left and $right
+    $right = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'Z');
 
     $restored = new ShoppingListEntry(['list_id' => 1]);
     $restored->placeInto(GroupKey::of(['list_id' => 1]), $left, $right);
@@ -153,7 +153,7 @@ it('throws when the GroupKey columns do not match the declared group columns', f
 })->throws(InvalidGroupKeyException::class);
 
 it('throws when an explicitly passed anchor does not belong to the target group', function () {
-    $foreignAnchor = ShoppingListEntry::create(['list_id' => 2, 'rank' => 'A']);
+    $foreignAnchor = seedAtRank(ShoppingListEntry::class, ['list_id' => 2], 'A');
 
     $entry = new ShoppingListEntry(['list_id' => 1]);
     $entry->placeInto(GroupKey::of(['list_id' => 1]), $foreignAnchor, null);
@@ -162,7 +162,7 @@ it('throws when an explicitly passed anchor does not belong to the target group'
 // --- Т4: group columns and rank change atomically ---------------------------
 
 it('changes the group columns and the rank in a single write', function () {
-    $mover = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $mover = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     DB::enableQueryLog();
     $mover->placeInto(GroupKey::of(['list_id' => 2]), null, null);
@@ -193,9 +193,9 @@ it('writes a brand-new, non-persistent model with a single INSERT', function () 
 // --- Untouched-row invariant --------------------------------------------------
 
 it('leaves the rank of every untouched row byte-identical after a placeInto() call', function () {
-    $a = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
-    $b = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
-    $c = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'Z']);
+    $a = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
+    $b = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'M');
+    $c = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'Z');
 
     $before = ShoppingListEntry::whereIn('id', [$a->id, $b->id])->orderBy('id')->pluck('rank')->all();
 
@@ -211,7 +211,7 @@ it('leaves the rank of every untouched row byte-identical after a placeInto() ca
 it('dispatches Positioned with a from group that differs from the to group on a cross-list move', function () {
     Event::fake([Positioned::class]);
 
-    $mover = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $mover = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
     $mover->placeInto(GroupKey::of(['list_id' => 2]), null, null);
 
     Event::assertDispatched(function (Positioned $event) use ($mover) {

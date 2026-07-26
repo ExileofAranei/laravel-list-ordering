@@ -37,7 +37,7 @@ it('sorts ranks in the database in exactly the same order as PHP byte-sort', fun
     shuffle($shuffled);
 
     foreach ($shuffled as $rank) {
-        ShoppingListEntry::create(['list_id' => 1, 'rank' => $rank]);
+        seedAtRank(ShoppingListEntry::class, ['list_id' => 1], $rank);
     }
 
     $fromDatabase = ShoppingListEntry::where('list_id', 1)->orderBy('rank')->pluck('rank')->all();

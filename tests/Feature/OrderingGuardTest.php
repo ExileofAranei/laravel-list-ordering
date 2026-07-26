@@ -6,35 +6,38 @@ use ExileOfAranei\ListOrdering\Support\GroupKey;
 use ExileOfAranei\ListOrdering\Tests\Fixtures\Models\ShoppingListEntry;
 
 it('throws when a group column is written directly on a persisted model', function () {
-    $entry = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $entry = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     $entry->list_id = 2;
     $entry->save();
 })->throws(GuardedColumnMutationException::class);
 
 it('throws when the rank column is written directly on a persisted model', function () {
-    $entry = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $entry = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     $entry->rank = 'Z';
     $entry->save();
 })->throws(GuardedColumnMutationException::class);
 
 it('does not throw for the same mutation made through placeInto()', function () {
-    $entry = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $entry = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     $entry->placeInto(GroupKey::of(['list_id' => 2]), null, null);
 
     expect($entry->list_id)->toBe(2);
 });
 
-it('does not throw when create() sets an explicit rank directly', function () {
-    $entry = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+it('rejects rank in mass assignment, even via create() on a brand-new record', function () {
+    // No saving event fires here to reject this (that guard only covers an
+    // already-persisted model) — this is the separate, per-instance guard
+    // that keeps rank out of $fillable in the first place.
+    $entry = new ShoppingListEntry(['list_id' => 1, 'rank' => 'A']);
 
-    expect($entry->exists)->toBeTrue();
+    expect($entry->rank)->toBeNull();
 });
 
 it('does not throw for an unrelated column change on a persisted model', function () {
-    $entry = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $entry = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     $entry->updated_at = now()->addMinute();
     $entry->save();
@@ -43,7 +46,7 @@ it('does not throw for an unrelated column change on a persisted model', functio
 });
 
 it('updates updated_at when a model moves via placeInto()', function () {
-    $entry = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $entry = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     // A forced time gap, not just "some time passes": updated_at is stored
     // at second precision, so a move landing in the same second as create()
@@ -62,8 +65,8 @@ it('clears the guard bypass flag after placeInto() even when the underlying writ
     // unique index rejects the write (no retry exists yet; that's ticket 06).
     app()->bind(RankGenerator::class, fn () => fakeRankGenerator(fn () => 'B'));
 
-    ShoppingListEntry::create(['list_id' => 1, 'rank' => 'B']);
-    $entry = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'B');
+    $entry = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     try {
         $entry->placeInto(GroupKey::of(['list_id' => 1]), null, null);

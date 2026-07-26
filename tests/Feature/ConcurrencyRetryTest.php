@@ -7,7 +7,7 @@ use ExileOfAranei\ListOrdering\Support\GroupKey;
 use ExileOfAranei\ListOrdering\Tests\Fixtures\Models\ShoppingListEntry;
 
 it('recovers from a forced conflict on the first attempt via retry', function () {
-    ShoppingListEntry::create(['list_id' => 1, 'rank' => 'B']);
+    seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'B');
 
     $calls = 0;
 
@@ -33,7 +33,7 @@ it('recovers from a forced conflict on the first attempt via retry', function ()
 });
 
 it('re-resolves a missing anchor fresh on each retry, not just the rank between stale bounds', function () {
-    $a = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $a = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     $log = [];
 
@@ -45,7 +45,7 @@ it('re-resolves a missing anchor fresh on each retry, not just the rank between 
                 // Simulate a concurrent writer landing right after $a,
                 // between the first attempt's read and its write, then
                 // force this attempt's own write to collide with it.
-                ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
+                seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'M');
 
                 return 'M';
             }
@@ -65,8 +65,8 @@ it('re-resolves a missing anchor fresh on each retry, not just the rank between 
 });
 
 it('re-resolves the upper bound of two explicit anchors fresh on retry, not just the rank between stale bounds', function () {
-    $a = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
-    $z = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'Z']);
+    $a = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
+    $z = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'Z');
 
     $log = [];
 
@@ -78,7 +78,7 @@ it('re-resolves the upper bound of two explicit anchors fresh on retry, not just
                 // Simulate a concurrent writer landing between $a and $z,
                 // at the exact rank this attempt is about to write, then
                 // force this attempt's own write to collide with it.
-                ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
+                seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'M');
 
                 return 'M';
             }
@@ -98,7 +98,7 @@ it('re-resolves the upper bound of two explicit anchors fresh on retry, not just
 });
 
 it('throws RankConflictException once retries are exhausted', function () {
-    ShoppingListEntry::create(['list_id' => 1, 'rank' => 'B']);
+    seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'B');
 
     app()->bind(RankGenerator::class, fn () => fakeRankGenerator(fn () => 'B')); // always collides
 
@@ -107,7 +107,7 @@ it('throws RankConflictException once retries are exhausted', function () {
 })->throws(RankConflictException::class);
 
 it('honors a maxRetries binding smaller than the default', function () {
-    ShoppingListEntry::create(['list_id' => 1, 'rank' => 'B']);
+    seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'B');
 
     $calls = 0;
 

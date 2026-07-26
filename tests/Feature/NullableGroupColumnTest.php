@@ -14,8 +14,8 @@ it('places into the end of an empty null-group list', function () {
 });
 
 it('inserts between two neighbors that are both in the null group', function () {
-    $left = Note::create(['notebook_id' => null, 'rank' => 'A']);
-    $right = Note::create(['notebook_id' => null, 'rank' => 'Z']);
+    $left = seedAtRank(Note::class, ['notebook_id' => null], 'A');
+    $right = seedAtRank(Note::class, ['notebook_id' => null], 'Z');
 
     $middle = new Note;
     $middle->placeInto(GroupKey::of(['notebook_id' => null]), $left, $right);
@@ -25,7 +25,7 @@ it('inserts between two neighbors that are both in the null group', function () 
 });
 
 it('placeAfter lands in the null group when the anchor itself currently belongs to it', function () {
-    $anchor = Note::create(['notebook_id' => null, 'rank' => 'A']);
+    $anchor = seedAtRank(Note::class, ['notebook_id' => null], 'A');
 
     $follower = new Note;
     $follower->placeAfter($anchor);

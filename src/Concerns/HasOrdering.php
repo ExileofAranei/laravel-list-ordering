@@ -10,6 +10,7 @@ use ExileOfAranei\ListOrdering\Internal\Positioner;
 use ExileOfAranei\ListOrdering\Support\GroupKey;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @phpstan-require-extends Model
@@ -115,6 +116,46 @@ trait HasOrdering
         $this->placeInto($anchor->currentGroupKey(), null, $anchor);
     }
 
+    /**
+     * A second primitive, alongside placeInto() — occupies an exact rank
+     * value instead of computing one between neighbors. Only meaningful for
+     * a new record: the saving guard already rejects a rank/group mutation
+     * on an already-persisted one, so calling this on an existing model
+     * fails there, not here — this method does not duplicate that check.
+     */
+    public function placeAtRank(GroupKey $group, string $rank): void
+    {
+        $this->assertMatchesDeclaredGroupColumns($group);
+
+        app(Positioner::class)->placeAtRank($this, $group, $rank);
+    }
+
+    /**
+     * Thin delegate to placeAtRank() — takes the exact rank of $source
+     * rather than computing one, so this record sorts identically to
+     * $source within its own group. The group itself is whatever this
+     * model's own group columns are already set to (e.g. from mass
+     * assignment before this call) — not $source's group, which is
+     * necessarily a different one: $source keeps occupying its own rank, so
+     * placing this record into that same group at that same rank would
+     * always collide with $source itself. Reads $source's rank inside the
+     * same transaction it writes in, so a concurrent move of $source can't
+     * be read half-applied.
+     */
+    public function cloneRankFrom(Model&Orderable $source): void
+    {
+        $group = GroupKey::of(array_combine(
+            $this->orderingGroupColumns(),
+            array_map($this->getAttribute(...), $this->orderingGroupColumns()),
+        ));
+
+        DB::transaction(function () use ($source, $group) {
+            $source->refresh();
+
+            $this->placeAtRank($group, $source->getAttribute($source->orderingRankColumn()));
+        });
+    }
+
     private function withOrderingGuardBypassed(\Closure $callback): mixed
     {
         $this->orderingGuardBypassed = true;
@@ -124,6 +165,27 @@ trait HasOrdering
         } finally {
             $this->orderingGuardBypassed = false;
         }
+    }
+
+    /**
+     * Per-instance (not per-class) trait hook: guards the rank column
+     * against mass assignment on every new instance, closing the one gap
+     * bootHasOrdering()'s saving guard leaves open — that guard only fires
+     * on an already-persisted model, so a bare create(['rank' => ...])
+     * would otherwise write an arbitrary rank with no check at all. Group
+     * columns are deliberately left alone: they're routinely set this way
+     * (e.g. `new Task(['board_id' => 42, ...])` before a placeInto() call),
+     * and placeInto()/placeAtRank() overwrite them from the given GroupKey
+     * regardless of what was mass-assigned.
+     *
+     * Only effective for the $guarded = [] (or unset) pattern: Eloquent
+     * checks $fillable before $guarded, so a consuming model that lists
+     * 'rank' in an explicit $fillable bypasses this silently. There's no
+     * fix for that from here — don't list rank in $fillable.
+     */
+    public function initializeHasOrdering(): void
+    {
+        $this->guarded = array_values(array_unique([...$this->guarded, $this->orderingRankColumn()]));
     }
 
     protected static function bootHasOrdering(): void
@@ -195,12 +257,12 @@ trait HasOrdering
      * the query is already narrowed to a single group by other means (e.g.
      * an already-scoped relationship).
      */
-    public function scopeOrdered(Builder $query, ?GroupKey $group = null): Builder
+    public function scopeOrdered(Builder $query, ?GroupKey $group = null, string $direction = 'asc'): Builder
     {
         if ($group !== null) {
             $group->applyTo($query);
         }
 
-        return $query->orderBy($this->orderingRankColumn());
+        return $query->orderBy($this->orderingRankColumn(), $direction);
     }
 }

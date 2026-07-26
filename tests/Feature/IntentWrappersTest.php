@@ -8,8 +8,8 @@ use ExileOfAranei\ListOrdering\Tests\Fixtures\Models\ShoppingListEntry;
 // two computations don't collide with each other on the same unique index.
 
 it('placeAtEnd is equivalent to placeInto($group, null, null)', function () {
-    ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
-    ShoppingListEntry::create(['list_id' => 2, 'rank' => 'A']);
+    seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
+    seedAtRank(ShoppingListEntry::class, ['list_id' => 2], 'A');
 
     $viaPrimitive = new ShoppingListEntry(['list_id' => 1]);
     $viaPrimitive->placeInto(GroupKey::of(['list_id' => 1]), null, null);
@@ -21,8 +21,8 @@ it('placeAtEnd is equivalent to placeInto($group, null, null)', function () {
 });
 
 it('placeAtStart is equivalent to placeInto($group, null, $firstOfGroup)', function () {
-    $firstInGroup1 = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
-    $firstInGroup2 = ShoppingListEntry::create(['list_id' => 2, 'rank' => 'M']);
+    $firstInGroup1 = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'M');
+    $firstInGroup2 = seedAtRank(ShoppingListEntry::class, ['list_id' => 2], 'M');
 
     $viaPrimitive = new ShoppingListEntry(['list_id' => 1]);
     $viaPrimitive->placeInto(GroupKey::of(['list_id' => 1]), null, $firstInGroup1);
@@ -44,8 +44,8 @@ it('placeAtStart on an empty group behaves like placeInto($group, null, null)', 
 });
 
 it('placeAfter is equivalent to placeInto($anchor->currentGroupKey(), $anchor, null)', function () {
-    $anchor1 = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
-    $anchor2 = ShoppingListEntry::create(['list_id' => 2, 'rank' => 'M']);
+    $anchor1 = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'M');
+    $anchor2 = seedAtRank(ShoppingListEntry::class, ['list_id' => 2], 'M');
 
     $viaPrimitive = new ShoppingListEntry(['list_id' => 1]);
     $viaPrimitive->placeInto($anchor1->currentGroupKey(), $anchor1, null);
@@ -57,8 +57,8 @@ it('placeAfter is equivalent to placeInto($anchor->currentGroupKey(), $anchor, n
 });
 
 it('placeBefore is equivalent to placeInto($anchor->currentGroupKey(), null, $anchor)', function () {
-    $anchor1 = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'M']);
-    $anchor2 = ShoppingListEntry::create(['list_id' => 2, 'rank' => 'M']);
+    $anchor1 = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'M');
+    $anchor2 = seedAtRank(ShoppingListEntry::class, ['list_id' => 2], 'M');
 
     $viaPrimitive = new ShoppingListEntry(['list_id' => 1]);
     $viaPrimitive->placeInto($anchor1->currentGroupKey(), null, $anchor1);
@@ -72,7 +72,7 @@ it('placeBefore is equivalent to placeInto($anchor->currentGroupKey(), null, $an
 // --- User story 11: the anchor's group is read at call time -----------------
 
 it('placeAfter lands in the group the anchor currently belongs to, even if the anchor moved since it was referenced', function () {
-    $anchor = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'A']);
+    $anchor = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'A');
 
     // The anchor itself moves to another list first.
     $anchor->placeInto(GroupKey::of(['list_id' => 2]), null, null);
@@ -86,7 +86,7 @@ it('placeAfter lands in the group the anchor currently belongs to, even if the a
 });
 
 it('placeBefore lands in the group the anchor currently belongs to, even if the anchor moved since it was referenced', function () {
-    $anchor = ShoppingListEntry::create(['list_id' => 1, 'rank' => 'Z']);
+    $anchor = seedAtRank(ShoppingListEntry::class, ['list_id' => 1], 'Z');
 
     $anchor->placeInto(GroupKey::of(['list_id' => 2]), null, null);
     $anchor->refresh();

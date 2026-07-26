@@ -64,6 +64,32 @@ final class Positioner
         }
     }
 
+    /**
+     * Occupies an exact rank value instead of computing one between
+     * neighbors. Unlike place(), a conflict here is never retried: the rank
+     * is fixed by the caller, so re-attempting would deterministically
+     * collide again.
+     */
+    public function placeAtRank(Model&Orderable $model, GroupKey $group, string $rank): void
+    {
+        foreach ($group->toArray() as $column => $value) {
+            $model->setAttribute($column, $value);
+        }
+
+        $model->setAttribute($model->orderingRankColumn(), $rank);
+
+        try {
+            $model->save();
+        } catch (UniqueConstraintViolationException $e) {
+            throw new RankConflictException(
+                'Failed to place the record: the given rank is already taken within this group.',
+                previous: $e,
+            );
+        }
+
+        event(new Positioned($model, null, $group));
+    }
+
     private function attempt(
         Model&Orderable $model,
         GroupKey $group,
