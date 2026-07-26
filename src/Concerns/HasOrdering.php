@@ -22,6 +22,47 @@ trait HasOrdering
     private bool $orderingGuardBypassed = false;
 
     /**
+     * Per-instance (not per-class) trait hook: guards the rank column
+     * against mass assignment on every new instance, closing the one gap
+     * bootHasOrdering()'s saving guard leaves open — that guard only fires
+     * on an already-persisted model, so a bare create(['rank' => ...])
+     * would otherwise write an arbitrary rank with no check at all. Group
+     * columns are deliberately left alone: they're routinely set this way
+     * (e.g. `new Task(['board_id' => 42, ...])` before a placeInto() call),
+     * and placeInto()/placeAtRank() overwrite them from the given GroupKey
+     * regardless of what was mass-assigned.
+     *
+     * Only effective for the $guarded = [] (or unset) pattern: Eloquent
+     * checks $fillable before $guarded, so a consuming model that lists
+     * 'rank' in an explicit $fillable bypasses this silently. There's no
+     * fix for that from here — don't list rank in $fillable.
+     */
+    public function initializeHasOrdering(): void
+    {
+        $this->guarded = array_values(array_unique([...$this->guarded, $this->orderingRankColumn()]));
+    }
+
+    protected static function bootHasOrdering(): void
+    {
+        static::saving(function (self $model) {
+            if (! $model->exists || $model->orderingGuardBypassed) {
+                return;
+            }
+
+            $watched = [...$model->orderingGroupColumns(), $model->orderingRankColumn()];
+
+            foreach ($watched as $column) {
+                if ($model->isDirty($column)) {
+                    throw new GuardedColumnMutationException(sprintf(
+                        'The column "%s" was modified outside placeInto().',
+                        $column,
+                    ));
+                }
+            }
+        });
+    }
+
+    /**
      * The only method a model is required to write itself.
      *
      * @return list<string>
@@ -165,47 +206,6 @@ trait HasOrdering
         } finally {
             $this->orderingGuardBypassed = false;
         }
-    }
-
-    /**
-     * Per-instance (not per-class) trait hook: guards the rank column
-     * against mass assignment on every new instance, closing the one gap
-     * bootHasOrdering()'s saving guard leaves open — that guard only fires
-     * on an already-persisted model, so a bare create(['rank' => ...])
-     * would otherwise write an arbitrary rank with no check at all. Group
-     * columns are deliberately left alone: they're routinely set this way
-     * (e.g. `new Task(['board_id' => 42, ...])` before a placeInto() call),
-     * and placeInto()/placeAtRank() overwrite them from the given GroupKey
-     * regardless of what was mass-assigned.
-     *
-     * Only effective for the $guarded = [] (or unset) pattern: Eloquent
-     * checks $fillable before $guarded, so a consuming model that lists
-     * 'rank' in an explicit $fillable bypasses this silently. There's no
-     * fix for that from here — don't list rank in $fillable.
-     */
-    public function initializeHasOrdering(): void
-    {
-        $this->guarded = array_values(array_unique([...$this->guarded, $this->orderingRankColumn()]));
-    }
-
-    protected static function bootHasOrdering(): void
-    {
-        static::saving(function (self $model) {
-            if (! $model->exists || $model->orderingGuardBypassed) {
-                return;
-            }
-
-            $watched = [...$model->orderingGroupColumns(), $model->orderingRankColumn()];
-
-            foreach ($watched as $column) {
-                if ($model->isDirty($column)) {
-                    throw new GuardedColumnMutationException(sprintf(
-                        'The column "%s" was modified outside placeInto().',
-                        $column,
-                    ));
-                }
-            }
-        });
     }
 
     private function assertMatchesDeclaredGroupColumns(GroupKey $group): void
